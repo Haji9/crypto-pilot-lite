@@ -11,7 +11,7 @@ import {
   type FuturesTicker, type SignalSetup, type Candle, type FundingData
 } from '@/lib/tradingEngine'
 import SignalDetail from './SignalDetail'
-import RadarSweep from './RadarSweep'
+import RadarPanel from './RadarPanel'
 
 function fmt(p: number) {
   if (p >= 1000) return p.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -210,10 +210,7 @@ export default function CryptoPilotDashboard() {
                 </div>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <RadarSweep scanning={scanning} size={42} />
-              <div className="w-px h-8 bg-gray-800" />
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
               <button onClick={() => setShowDiag(!showDiag)}
                 className={cn("px-2 py-1.5 rounded-lg text-[10px] font-medium transition-all border",
                   showDiag ? "bg-violet-500/20 text-violet-400 border-violet-500/30" : "bg-[#0d1321] text-gray-500 border-gray-800/50 hover:border-gray-700"
@@ -232,7 +229,6 @@ export default function CryptoPilotDashboard() {
                 {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                 {scanning ? 'Scanning...' : 'Scan Now'}
               </button>
-              </div>
             </div>
           </div>
           {scanning && (
@@ -245,6 +241,15 @@ export default function CryptoPilotDashboard() {
       </header>
 
       <main className="max-w-[1600px] mx-auto px-5 py-5">
+        {/* ── Radar Panel ── */}
+        <RadarPanel
+          scanning={scanning}
+          signals={allSignals}
+          scannedCount={scannedCount}
+          totalSymbols={totalSymbols}
+          scanProgress={totalSymbols > 0 ? scannedCount / totalSymbols : 0}
+        />
+
         {error && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3">
             <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
