@@ -13,17 +13,27 @@ dist-ssr/
 # Database
 prisma/dev.db
 prisma/dev.db-journal
+prisma/dev.db-shm
+prisma/dev.db-wal
 
-# Shogo runtime
+# Shogo runtime (internal)
 .shogo/
 .shogo-pool-assignment
 .shogo-runtime-version
 .cursor/
 
+# Memory & session files
+memory/
+*.db
+*.db-shm
+*.db-wal
+
+# Uploaded files
+files/
+
 # IDE
-.vscode/*
-!.vscode/extensions.json
-.idea
+.vscode/
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
@@ -48,3 +58,7 @@ lerna-debug.log*
 
 # Local
 *.local
+
+# Generated Prisma
+src/generated/
+.bun/
