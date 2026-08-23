@@ -5,7 +5,7 @@ export const config = { runtime: 'nodejs' }
 export default async function handler(req: Request) {
   if (req.method === 'OPTIONS') return jsonResponse({}, 204)
 
-  const url = new URL(req.url)
+  const url = new URL(req.url, 'http://localhost')
   const symbol = (url.searchParams.get('symbol') || 'BTC').toUpperCase()
   const instId = toInstId(symbol)
   const sz = url.searchParams.get('sz') || '40'

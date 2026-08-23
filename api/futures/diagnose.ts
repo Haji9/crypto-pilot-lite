@@ -1,6 +1,6 @@
 import { okxFetch, jsonResponse } from '../lib/okx'
 
-export const config = { runtime: 'nodejs', maxDuration: 30 }
+export const config = { runtime: 'nodejs', maxDuration: 10 }
 
 export default async function handler(req: Request) {
   if (req.method === 'OPTIONS') return jsonResponse({}, 204)
