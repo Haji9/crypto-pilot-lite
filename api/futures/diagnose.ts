@@ -1,14 +1,22 @@
-import { okxFetch, jsonResponse } from '../_lib/okx'
-
-export const config = { runtime: 'nodejs', maxDuration: 10 }
+export const config = { runtime: 'edge' }
 
 export default async function handler(req: Request) {
-  if (req.method === 'OPTIONS') return jsonResponse({}, 204)
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders() })
+  }
 
   const log: string[] = []
   const stageStats: Record<string, number> = {}
   const tick = (stage: string) => { log.push(`[${new Date().toISOString().slice(11, 19)}] ${stage}`) }
   const count = (key: string, n = 1) => { stageStats[key] = (stageStats[key] || 0) + n }
+
+  async function okxFetch(path: string) {
+    const res = await fetch(`https://www.okx.com${path}`)
+    if (!res.ok) throw new Error(`OKX ${res.status}: ${path}`)
+    const data = await res.json() as any
+    if (data.code !== '0') throw new Error(`OKX error ${data.code}: ${data.msg}`)
+    return data.data
+  }
 
   tick('STAGE 1: Fetching tickers from OKX...')
   let tickers: any[] = []
@@ -38,7 +46,7 @@ export default async function handler(req: Request) {
     stageStats.totalTickers = tickers.length
   } catch (err: any) {
     tick(`STAGE 1: FAILED - ${err.message}`)
-    return jsonResponse({ error: `Stage 1 failed: ${err.message}`, log, stageStats }, 502)
+    return json({ error: `Stage 1 failed: ${err.message}`, log, stageStats }, 502)
   }
 
   const candidates = tickers.slice(0, 10)
@@ -177,7 +185,7 @@ export default async function handler(req: Request) {
   tick(`Signals generated: ${signals.length}`)
   tick(`Rejection reasons: ${JSON.stringify(rejectionReasons)}`)
 
-  return jsonResponse({
+  return json({
     summary: {
       totalTickers: stageStats.totalTickers || 0,
       candidatesScanned: stageStats.candidates || 0,
@@ -190,4 +198,12 @@ export default async function handler(req: Request) {
     signals,
     log,
   })
+}
+
+function corsHeaders() {
+  return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }
+}
+
+function json(data: any, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders() } })
 }

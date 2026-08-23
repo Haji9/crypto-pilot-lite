@@ -1,23 +1,23 @@
-import { okxFetch, toInstId, getC, setC, jsonResponse } from '../_lib/okx'
-
-export const config = { runtime: 'nodejs' }
+export const config = { runtime: 'edge' }
 
 export default async function handler(req: Request) {
-  if (req.method === 'OPTIONS') return jsonResponse({}, 204)
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders() })
+  }
 
-  const url = new URL(req.url, 'http://localhost')
+  const url = new URL(req.url)
   const symbol = (url.searchParams.get('symbol') || 'BTC').toUpperCase()
-  const instId = toInstId(symbol)
+  const instId = symbol.endsWith('-USDT-SWAP') ? symbol : `${symbol}-USDT-SWAP`
   const bar = url.searchParams.get('bar') || '1H'
   const limit = url.searchParams.get('limit') || '300'
-  const ck = `fklines:${instId}:${bar}:${limit}`
-
-  const cached = getC(ck, 15000)
-  if (cached) return jsonResponse(cached)
 
   try {
-    const raw = await okxFetch(`/api/v5/market/candles?instId=${instId}&bar=${bar}&limit=${limit}`)
-    const candles = raw.map((k: any[]) => ({
+    const res = await fetch(`https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=${bar}&limit=${limit}`)
+    if (!res.ok) throw new Error(`OKX ${res.status}`)
+    const data = await res.json() as any
+    if (data.code !== '0') throw new Error(`OKX error ${data.code}: ${data.msg}`)
+
+    const candles = (data.data || []).map((k: any[]) => ({
       ts: parseInt(k[0]),
       open: parseFloat(k[1]),
       high: parseFloat(k[2]),
@@ -27,10 +27,16 @@ export default async function handler(req: Request) {
       volCcy: parseFloat(k[6]),
     })).reverse()
 
-    const result = { instId, bar, candles }
-    setC(ck, result, 15000)
-    return jsonResponse(result)
+    return json({ instId, bar, candles })
   } catch (err: any) {
-    return jsonResponse({ error: err.message }, 502)
+    return json({ error: err.message }, 502)
   }
+}
+
+function corsHeaders() {
+  return { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' }
+}
+
+function json(data: any, status = 200) {
+  return new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders() } })
 }
