@@ -1,4 +1,4 @@
-import { okxFetch, toInstId, jsonResponse } from '../lib/okx'
+import { okxFetch, toInstId, jsonResponse } from '../_lib/okx'
 
 export const config = { runtime: 'nodejs' }
 
