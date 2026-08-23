@@ -24,6 +24,7 @@
   },
   "include": [
     "src/**/*",
+    "api/**/*",
     "*.config.ts"
   ],
   "watchOptions": {
