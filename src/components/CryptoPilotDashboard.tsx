@@ -7,8 +7,10 @@ import {
 import { cn } from '@/lib/cn'
 import {
   fetchFuturesTickerData, fetchKlines, fetchFunding,
+  fetchYahooTickerData, fetchYahooKlines,
   computeIndicators, analyzeMarketStructure, generateSignal,
-  type FuturesTicker, type SignalSetup, type Candle, type FundingData
+  type FuturesTicker, type SignalSetup, type Candle, type FundingData,
+  type AssetClass, type AssetTicker
 } from '@/lib/tradingEngine'
 import SignalDetail from './SignalDetail'
 import RadarPanel from './RadarPanel'
@@ -51,6 +53,7 @@ const emptyDiag = (): Diagnostics => ({
 export default function CryptoPilotDashboard() {
   const [allSignals, setAllSignals] = useState<SignalSetup[]>([])
   const [allTickers, setAllTickers] = useState<FuturesTicker[]>([])
+  const [assetClass, setAssetClass] = useState<AssetClass>('crypto')
   const [scanning, setScanning] = useState(false)
   const [scannedCount, setScannedCount] = useState(0)
   const [totalSymbols, setTotalSymbols] = useState(0)
@@ -76,78 +79,117 @@ export default function CryptoPilotDashboard() {
     try {
       setScannedCount(0)
 
-      // STAGE 1: Fetch tickers
-      const tickers = await fetchFuturesTickerData()
-      d.tickersFetched = tickers.length
-      setAllTickers(tickers)
-      setTotalSymbols(tickers.length)
+      if (assetClass === 'crypto') {
+        // STAGE 1: Fetch OKX perpetual futures tickers
+        const tickers = await fetchFuturesTickerData()
+        d.tickersFetched = tickers.length
+        setAllTickers(tickers)
+        setTotalSymbols(tickers.length)
 
-      const candidates = tickers.slice(0, 30)
-      d.candidatesTotal = candidates.length
-      const foundSignals: SignalSetup[] = []
+        const candidates = tickers.slice(0, 30)
+        d.candidatesTotal = candidates.length
+        const foundSignals: SignalSetup[] = []
 
-      // STAGE 2-6: Analyze each candidate
-      for (let i = 0; i < candidates.length; i++) {
-        setScannedCount(i + 1)
-        const sym = candidates[i]
+        for (let i = 0; i < candidates.length; i++) {
+          setScannedCount(i + 1)
+          const sym = candidates[i]
 
-        // STAGE 3: Fetch candle data
-        let candles1h: Candle[] = []
-        let candles4h: Candle[] = []
-        let fundingData: FundingData | null = null
+          let candles1h: Candle[] = []
+          let candles4h: Candle[] = []
+          let fundingData: FundingData | null = null
 
-        try {
-          candles1h = await fetchKlines(sym.symbol, '1H', 300)
-        } catch (err: any) {
-          d.klinesFailed++
-          d.errors.push(`${sym.symbol} 1H: ${err.message}`)
-          continue
-        }
-        d.klinesOk++
+          try {
+            candles1h = await fetchKlines(sym.symbol, '1H', 300)
+          } catch (err: any) {
+            d.klinesFailed++
+            d.errors.push(`${sym.symbol} 1H: ${err.message}`)
+            continue
+          }
+          d.klinesOk++
 
-        try { candles4h = await fetchKlines(sym.symbol, '4H', 200) } catch { /* optional */ }
-        try { fundingData = await fetchFunding(sym.symbol) } catch { /* optional */ }
+          try { candles4h = await fetchKlines(sym.symbol, '4H', 200) } catch { }
+          try { fundingData = await fetchFunding(sym.symbol) } catch { }
 
-        // STAGE 4: Validate candle data
-        if (candles1h.length < 50) {
-          d.rejectedNoCandles++
-          continue
-        }
+          if (candles1h.length < 50) { d.rejectedNoCandles++; continue }
 
-        // STAGE 5-6: Run technical analysis and generate signal
-        let signal: SignalSetup | null = null
-        try {
-          const ind1h = computeIndicators(candles1h)
-          const struct1h = analyzeMarketStructure(candles1h)
-          signal = generateSignal(sym, candles1h, ind1h, struct1h, fundingData)
-        } catch (err: any) {
-          d.errors.push(`${sym.symbol} analysis: ${err.message}`)
-          continue
-        }
+          let signal: SignalSetup | null = null
+          try {
+            const ind1h = computeIndicators(candles1h)
+            const struct1h = analyzeMarketStructure(candles1h)
+            signal = generateSignal(sym, candles1h, ind1h, struct1h, fundingData)
+          } catch (err: any) {
+            d.errors.push(`${sym.symbol} analysis: ${err.message}`)
+            continue
+          }
 
-        if (!signal) {
-          d.rejectedNoDirection++
-          continue
-        }
+          if (!signal) { d.rejectedNoDirection++; continue }
 
-        // 4H confluence bonus
-        if (candles4h && candles4h.length >= 50) {
-          const struct4h = analyzeMarketStructure(candles4h)
-          const aligned4h = (signal.direction === 'LONG' && (struct4h.trend === 'Bullish' || struct4h.trend === 'Strong Bullish')) ||
-                            (signal.direction === 'SHORT' && (struct4h.trend === 'Bearish' || struct4h.trend === 'Strong Bearish'))
-          if (aligned4h) signal.confidence = Math.min(98, signal.confidence + 3)
+          if (candles4h && candles4h.length >= 50) {
+            const struct4h = analyzeMarketStructure(candles4h)
+            const aligned4h = (signal.direction === 'LONG' && (struct4h.trend === 'Bullish' || struct4h.trend === 'Strong Bullish')) ||
+                              (signal.direction === 'SHORT' && (struct4h.trend === 'Bearish' || struct4h.trend === 'Strong Bearish'))
+            if (aligned4h) signal.confidence = Math.min(98, signal.confidence + 3)
+          }
+
+          d.analyzed++
+          if (signal.confidence >= 80) { d.passedHigh++ } else { d.passedLow++ }
+          foundSignals.push(signal)
+          if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 100))
         }
 
-        d.analyzed++
-        if (signal.confidence >= 80) { d.passedHigh++ } else { d.passedLow++ }
-        foundSignals.push(signal)
-        if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 100))
+        foundSignals.sort((a, b) => b.confidence - a.confidence)
+        d.finalSignals = foundSignals.length
+        setAllSignals(foundSignals)
+      } else {
+        // Multi-asset scanning via Yahoo Finance
+        const yahooTickers = await fetchYahooTickerData(assetClass)
+        d.tickersFetched = yahooTickers.length
+        setAllTickers(yahooTickers)
+        setTotalSymbols(yahooTickers.length)
+
+        const candidates = yahooTickers.slice(0, 20)
+        d.candidatesTotal = candidates.length
+        const foundSignals: SignalSetup[] = []
+
+        for (let i = 0; i < candidates.length; i++) {
+          setScannedCount(i + 1)
+          const sym = candidates[i]
+
+          let candles: Candle[] = []
+          try {
+            candles = await fetchYahooKlines(sym.instId, '1d', 200)
+          } catch (err: any) {
+            d.klinesFailed++
+            d.errors.push(`${sym.symbol} klines: ${err.message}`)
+            continue
+          }
+          d.klinesOk++
+
+          if (candles.length < 50) { d.rejectedNoCandles++; continue }
+
+          let signal: SignalSetup | null = null
+          try {
+            const ind = computeIndicators(candles)
+            const struct = analyzeMarketStructure(candles)
+            signal = generateSignal(sym, candles, ind, struct, null)
+          } catch (err: any) {
+            d.errors.push(`${sym.symbol} analysis: ${err.message}`)
+            continue
+          }
+
+          if (!signal) { d.rejectedNoDirection++; continue }
+
+          d.analyzed++
+          if (signal.confidence >= 80) { d.passedHigh++ } else { d.passedLow++ }
+          foundSignals.push(signal)
+          if (i < candidates.length - 1) await new Promise(r => setTimeout(r, 200))
+        }
+
+        foundSignals.sort((a, b) => b.confidence - a.confidence)
+        d.finalSignals = foundSignals.length
+        setAllSignals(foundSignals)
       }
 
-      // STAGE 7: Final output
-      foundSignals.sort((a, b) => b.confidence - a.confidence)
-      d.finalSignals = foundSignals.length
-      setAllSignals(foundSignals)
       setDiag(d)
       setLastScan(new Date())
       setScanComplete(true)
@@ -158,7 +200,7 @@ export default function CryptoPilotDashboard() {
       scanningRef.current = false
       setScanning(false)
     }
-  }, [])
+  }, [assetClass])
 
   useEffect(() => {
     runScanner()
@@ -202,7 +244,7 @@ export default function CryptoPilotDashboard() {
                   </span>
                   {lastScan && <span>Last: {lastScan.toLocaleTimeString()}</span>}
                   <span className="text-gray-700">•</span>
-                  <span>OKX Perpetual</span>
+                  <span>{assetClass === 'crypto' ? 'OKX Perpetual' : assetClass === 'stocks' ? 'US Stocks' : assetClass === 'commodities' ? 'Commodities' : assetClass === 'forex' ? 'Forex' : 'Indices'}</span>
                   <span className="text-gray-700">•</span>
                   <span className="text-emerald-400">{highConfidence.length} high</span>
                   <span className="text-gray-600">/</span>
@@ -249,6 +291,31 @@ export default function CryptoPilotDashboard() {
           totalSymbols={totalSymbols}
           scanProgress={totalSymbols > 0 ? scannedCount / totalSymbols : 0}
         />
+
+        {/* ── Asset Class Tabs ── */}
+        <div className="flex items-center gap-1.5 mb-5 overflow-x-auto pb-1">
+          {([
+            { key: 'crypto' as AssetClass, label: 'Crypto Futures', icon: '₿' },
+            { key: 'stocks' as AssetClass, label: 'Stocks', icon: '📈' },
+            { key: 'commodities' as AssetClass, label: 'Commodities', icon: '🥇' },
+            { key: 'forex' as AssetClass, label: 'Forex', icon: '💱' },
+            { key: 'indices' as AssetClass, label: 'Indices', icon: '📊' },
+          ]).map(tab => (
+            <button
+              key={tab.key}
+              onClick={() => { setAssetClass(tab.key); setAllSignals([]); setScanComplete(false) }}
+              className={cn(
+                "flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-medium transition-all border whitespace-nowrap",
+                assetClass === tab.key
+                  ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 shadow-lg shadow-emerald-500/10"
+                  : "bg-[#0d1321] text-gray-500 border-gray-800/50 hover:border-gray-700 hover:text-gray-400"
+              )}
+            >
+              <span>{tab.icon}</span>
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
         {error && (
           <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-xl flex items-center gap-3">
@@ -323,7 +390,7 @@ export default function CryptoPilotDashboard() {
           <div className="text-center py-16">
             <Loader2 className="w-12 h-12 text-emerald-400 animate-spin mx-auto mb-4" />
             <p className="text-gray-300 text-sm font-medium">Scanner is running. No validated opportunities found yet.</p>
-            <p className="text-gray-600 text-xs mt-1">Analyzing {scannedCount}/{totalSymbols} perpetual futures...</p>
+            <p className="text-gray-600 text-xs mt-1">Analyzing {scannedCount}/{totalSymbols} {assetClass === 'crypto' ? 'perpetual futures' : assetClass}...</p>
           </div>
         )}
 

@@ -77,6 +77,32 @@ export async function fetchFunding(symbol: string): Promise<FundingData | null> 
   } catch { return null }
 }
 
+export type AssetClass = 'crypto' | 'stocks' | 'commodities' | 'forex' | 'indices'
+
+export interface AssetTicker extends FuturesTicker {
+  displayName: string
+  assetClass: AssetClass
+  exchange: string
+  change24h: number
+}
+
+export async function fetchYahooTickerData(assetClass: AssetClass): Promise<AssetTicker[]> {
+  const cls = assetClass === 'crypto' ? 'stocks' : assetClass
+  const res = await fetch(`/api/assets/tickers?class=${cls}`)
+  if (!res.ok) throw new Error(`Yahoo Tickers: ${res.status}`)
+  const data = await res.json()
+  if (data.error) throw new Error(data.error)
+  return data.tickers || []
+}
+
+export async function fetchYahooKlines(symbol: string, bar: string = '1d', limit: number = 200): Promise<Candle[]> {
+  const res = await fetch(`/api/assets/klines?symbol=${encodeURIComponent(symbol)}&bar=${bar}&limit=${limit}`)
+  if (!res.ok) throw new Error(`Yahoo Klines: ${res.status}`)
+  const data = await res.json()
+  if (data.error) throw new Error(data.error)
+  return data.candles || []
+}
+
 // ─── Indicator Calculations ─────────────────────────────────
 
 function ema(data: number[], period: number): number[] {
